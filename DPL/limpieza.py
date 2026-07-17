@@ -160,41 +160,85 @@ def limpiar_direccion(df: pd.DataFrame) -> pd.DataFrame:
 
 def limpiar_director(df: pd.DataFrame) -> pd.DataFrame:
     """
-    TODO (Persona B):
-    - Convertir placeholders de guiones ('----', '----------') o '.' a NaN.
-    - Limpiar espacios sobrantes (.str.strip() y reemplazar espacios dobles).
-    - Convertir a MAYÚSCULAS.
+    Convierte placeholders (guiones, puntos, 'S/D', vacíos) de DIRECTOR a NaN.
+    Para nombres válidos: normaliza espacios y convierte a MAYÚSCULAS.
     """
     df = df.copy()
-    # === IMPLEMENTAR AQUÍ ===
-    print("[TODO] Persona B: Falta implementar limpieza de DIRECTOR. Por ahora se mantiene igual.")
+    df["DIRECTOR"] = df["DIRECTOR"].astype(str).str.strip()
+
+    # Placeholders: strings hechos únicamente de guiones/puntos/comas/ceros/espacios,
+    # caracteres de encoding roto (U+FFFD), o nulos disfrazados
+    patron_placeholder = re.compile(r"^[-.,\s0]+$")
+    patron_encoding_roto = re.compile(r"^�+$")
+    es_placeholder = df["DIRECTOR"].isin(["nan", "None", "", "S/D"]) | \
+        df["DIRECTOR"].str.fullmatch(patron_placeholder.pattern) | \
+        df["DIRECTOR"].str.fullmatch(patron_encoding_roto.pattern)
+    n_placeholders = es_placeholder.sum()
+    df.loc[es_placeholder, "DIRECTOR"] = np.nan
+
+    no_nulos = df["DIRECTOR"].notna()
+    df.loc[no_nulos, "DIRECTOR"] = df.loc[no_nulos, "DIRECTOR"] \
+        .str.upper().str.replace(r"\s+", " ", regex=True)
+
+    print(f"[OK] Limpieza de columna DIRECTOR completada ({n_placeholders} placeholders convertidos a NaN).")
     return df
 
 
 def limpiar_telefono(df: pd.DataFrame) -> pd.DataFrame:
     """
-    TODO (Persona B):
-    - Convertir 'S/D' o vacíos a NaN.
-    - Remover guiones y espacios intermedios.
-    - Manejar los multivalores en celdas (extraer el primer número válido de 8 dígitos).
+    Convierte 'S/D'/vacíos a NaN. Para celdas con varios teléfonos separados
+    por comas, punto y coma, slash o 'Y', toma el primero que tenga
+    exactamente 8 dígitos tras remover guiones/espacios. Si ninguno califica,
+    asigna NaN.
     """
     df = df.copy()
-    # === IMPLEMENTAR AQUÍ ===
-    print("[TODO] Persona B: Falta implementar limpieza de TELEFONO. Por ahora se mantiene igual.")
+    df["TELEFONO"] = df["TELEFONO"].astype(str).str.strip()
+    df.loc[df["TELEFONO"].isin(["nan", "None", "", "S/D"]), "TELEFONO"] = np.nan
+
+    patron_separadores = re.compile(r"[,;/]|\bY\b")
+
+    def extraer_ocho_digitos(valor):
+        if pd.isna(valor):
+            return np.nan
+        candidatos = patron_separadores.split(valor)
+        for candidato in candidatos:
+            solo_digitos = re.sub(r"\D", "", candidato)
+            if len(solo_digitos) == 8:
+                return solo_digitos
+        return np.nan
+
+    n_multivalor = df["TELEFONO"].notna().sum()
+    df["TELEFONO"] = df["TELEFONO"].apply(extraer_ocho_digitos)
+    n_validos = df["TELEFONO"].notna().sum()
+
+    print(f"[OK] Limpieza de columna TELEFONO completada "
+          f"({n_validos} de {n_multivalor} celdas no nulas resultaron en un teléfono de 8 dígitos válido).")
     return df
 
 
 def limpiar_catalogos(df: pd.DataFrame) -> pd.DataFrame:
     """
-    TODO (Persona B):
-    - Limpiar variables categóricas: NIVEL, SECTOR, AREA, STATUS, MODALIDAD, JORNADA, PLAN.
-    - Hacer .str.strip() y .str.upper().
-    - Filtrar el dataset para remover registros de NIVEL que sean 'UNIVERSIDAD' o 'ADMINISTRATIVOS'.
-    - Convertir 'SIN ESPECIFICAR' de la columna AREA a NaN (si corresponde).
+    Estandariza las variables de catálogo: NIVEL, SECTOR, AREA, STATUS,
+    MODALIDAD, JORNADA, PLAN. Filtra registros de NIVEL fuera del alcance
+    del proyecto (UNIVERSIDAD, ADMINISTRATIVOS) y mapea AREA='SIN ESPECIFICAR'
+    a NaN.
     """
     df = df.copy()
-    # === IMPLEMENTAR AQUÍ ===
-    print("[TODO] Persona B: Falta implementar limpieza de CATÁLOGOS. Por ahora se mantiene igual.")
+    columnas_catalogo = ["NIVEL", "SECTOR", "AREA", "STATUS", "MODALIDAD", "JORNADA", "PLAN"]
+    for columna in columnas_catalogo:
+        df[columna] = df[columna].astype(str).str.strip().str.upper()
+
+    registros_antes = df.shape[0]
+    fuera_de_alcance = ["UNIVERSIDAD", "ADMINISTRATIVOS"]
+    df = df[~df["NIVEL"].isin(fuera_de_alcance)].copy()
+    print(f"[INFO] Se removieron {registros_antes - df.shape[0]} registros de NIVEL fuera de alcance "
+          f"({', '.join(fuera_de_alcance)}).")
+
+    n_sin_especificar = (df["AREA"] == "SIN ESPECIFICAR").sum()
+    df.loc[df["AREA"] == "SIN ESPECIFICAR", "AREA"] = np.nan
+
+    print(f"[OK] Limpieza de columnas de CATÁLOGOS completada "
+          f"({n_sin_especificar} registros de AREA='SIN ESPECIFICAR' convertidos a NaN).")
     return df
 
 
