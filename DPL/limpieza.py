@@ -116,11 +116,16 @@ def limpiar_supervisor(df: pd.DataFrame) -> pd.DataFrame:
     Normaliza espacios del nombre de SUPERVISOR y mapea vacíos a NaN.
     """
     df = df.copy()
-    df["SUPERVISOR"] = df["SUPERVISOR"].astype(str).str.strip().str.upper()
-    df["SUPERVISOR"] = df["SUPERVISOR"].str.replace(r"\s+", " ", regex=True)
-    
-    # Mapear strings nulos a NaN
+    df["SUPERVISOR"] = df["SUPERVISOR"].astype(str).str.strip()
+
+    # Mapear strings nulos a NaN ANTES de pasar a mayúsculas: str(NaN) es "nan"
+    # en minúscula, y .str.upper() lo convertiría en el texto literal "NAN" que
+    # ya no calzaría con esta comparación si se hiciera después.
     df.loc[df["SUPERVISOR"].isin(["nan", "None", "", "S/D"]), "SUPERVISOR"] = np.nan
+
+    no_nulos = df["SUPERVISOR"].notna()
+    df.loc[no_nulos, "SUPERVISOR"] = df.loc[no_nulos, "SUPERVISOR"] \
+        .str.upper().str.replace(r"\s+", " ", regex=True)
     print("[OK] Limpieza de columna SUPERVISOR completada.")
     return df
 
@@ -131,10 +136,15 @@ def limpiar_establecimiento(df: pd.DataFrame) -> pd.DataFrame:
     REGLA: No corregir ortografía ni alterar el contenido lingüístico original.
     """
     df = df.copy()
-    # Asegurar que sea texto
-    df["ESTABLECIMIENTO"] = df["ESTABLECIMIENTO"].astype(str).str.strip().str.upper()
-    # Estandarizar múltiples espacios consecutivos a uno solo
-    df["ESTABLECIMIENTO"] = df["ESTABLECIMIENTO"].str.replace(r"\s+", " ", regex=True)
+    df["ESTABLECIMIENTO"] = df["ESTABLECIMIENTO"].astype(str).str.strip()
+
+    # Mapear nulos disfrazados a NaN ANTES de pasar a mayúsculas (ver nota en
+    # limpiar_supervisor: str(NaN).upper() == "NAN" ya no calza con "nan").
+    df.loc[df["ESTABLECIMIENTO"].isin(["nan", "None", "", "S/D"]), "ESTABLECIMIENTO"] = np.nan
+
+    no_nulos = df["ESTABLECIMIENTO"].notna()
+    df.loc[no_nulos, "ESTABLECIMIENTO"] = df.loc[no_nulos, "ESTABLECIMIENTO"] \
+        .str.upper().str.replace(r"\s+", " ", regex=True)
     print("[OK] Limpieza de columna ESTABLECIMIENTO completada.")
     return df
 
@@ -145,11 +155,19 @@ def limpiar_direccion(df: pd.DataFrame) -> pd.DataFrame:
     REGLA: No corregir ortografía ni alterar el contenido lingüístico original.
     """
     df = df.copy()
-    df["DIRECCION"] = df["DIRECCION"].astype(str).str.strip().str.upper()
-    df["DIRECCION"] = df["DIRECCION"].str.replace(r"\s+", " ", regex=True)
-    
-    # Mapear nulos disfrazados
-    df.loc[df["DIRECCION"].isin(["nan", "None", "", "S/D", "-", "."]), "DIRECCION"] = np.nan
+    df["DIRECCION"] = df["DIRECCION"].astype(str).str.strip()
+
+    # Mapear nulos disfrazados a NaN ANTES de pasar a mayúsculas (ver nota en
+    # limpiar_supervisor: str(NaN).upper() == "NAN" ya no calza con "nan"),
+    # incluyendo guiones de largo variable ("-", "--", "---", ...).
+    patron_guiones = re.compile(r"^-+$")
+    es_nulo_disfrazado = df["DIRECCION"].isin(["nan", "None", "", "S/D", "."]) | \
+        df["DIRECCION"].str.fullmatch(patron_guiones.pattern)
+    df.loc[es_nulo_disfrazado, "DIRECCION"] = np.nan
+
+    no_nulos = df["DIRECCION"].notna()
+    df.loc[no_nulos, "DIRECCION"] = df.loc[no_nulos, "DIRECCION"] \
+        .str.upper().str.replace(r"\s+", " ", regex=True)
     print("[OK] Limpieza de columna DIRECCION completada.")
     return df
 
@@ -167,10 +185,11 @@ def limpiar_director(df: pd.DataFrame) -> pd.DataFrame:
     df["DIRECTOR"] = df["DIRECTOR"].astype(str).str.strip()
 
     # Placeholders: strings hechos únicamente de guiones/puntos/comas/ceros/espacios,
-    # caracteres de encoding roto (U+FFFD), o nulos disfrazados
+    # caracteres de encoding roto (U+FFFD), tokens conocidos de "sin dato", o nulos disfrazados
     patron_placeholder = re.compile(r"^[-.,\s0]+$")
     patron_encoding_roto = re.compile(r"^�+$")
-    es_placeholder = df["DIRECTOR"].isin(["nan", "None", "", "S/D"]) | \
+    tokens_sin_dato = ["nan", "None", "", "S/D", "SIN DATO", "SIN DATOS", "NO APLICA"]
+    es_placeholder = df["DIRECTOR"].str.upper().isin([t.upper() for t in tokens_sin_dato]) | \
         df["DIRECTOR"].str.fullmatch(patron_placeholder.pattern) | \
         df["DIRECTOR"].str.fullmatch(patron_encoding_roto.pattern)
     n_placeholders = es_placeholder.sum()
